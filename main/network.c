@@ -1,33 +1,85 @@
 // SPDX-License-Identifier: MIT
+/*
+ * Ethernet (internal EMAC + IP101 RMII PHY on the Waveshare ESP32-P4-ETH).
+ */
+#include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_eth.h"
+#include "esp_eth_netif_glue.h"
+#include "mdns.h"
 #include "app_config.h"
 #include "network.h"
 
 static const char *TAG = "network";
 static network_ip_cb_t s_on_ip;
+static esp_netif_t *s_netif;
+static esp_eth_handle_t s_eth;
+static uint8_t s_mac[6];
+static volatile bool s_link_up, s_has_ip;
+static volatile int s_speed;
 
-static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
+static void on_eth_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    ip_event_got_ip_t *ev = data;
-    ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ev->ip_info.ip));
-    if (s_on_ip) s_on_ip(&ev->ip_info.ip);
+    switch (id) {
+    case ETHERNET_EVENT_CONNECTED: {
+        eth_speed_t speed = ETH_SPEED_100M;
+        esp_eth_ioctl(s_eth, ETH_CMD_G_SPEED, &speed);
+        s_speed = speed == ETH_SPEED_100M ? 100 : 10;
+        s_link_up = true;
+        ESP_LOGI(TAG, "Link up, %d Mbit/s", s_speed);
+        break;
+    }
+    case ETHERNET_EVENT_DISCONNECTED:
+        s_link_up = false;
+        ESP_LOGW(TAG, "Link down");
+        break;
+    default:
+        break;
+    }
 }
 
-#if NETWORK_MODE == NETWORK_MODE_ETHERNET
-/* ------------------------------------------------------------------------ */
-/* Ethernet (internal EMAC + RMII PHY)                                      */
-/* ------------------------------------------------------------------------ */
-#include "esp_eth.h"
-#include "esp_eth_netif_glue.h"
-
-static void network_backend_start(void)
+static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
+    if (id == IP_EVENT_ETH_GOT_IP) {
+        ip_event_got_ip_t *ev = data;
+        s_has_ip = true;
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ev->ip_info.ip));
+        if (s_on_ip) s_on_ip(&ev->ip_info.ip);
+    } else if (id == IP_EVENT_ETH_LOST_IP) {
+        s_has_ip = false;
+        ESP_LOGW(TAG, "Lost IP");
+    }
+}
+
+static void apply_static_ip(const net_settings_t *cfg)
+{
+    esp_netif_ip_info_t info = { 0 };
+    esp_netif_str_to_ip4(cfg->ip, &info.ip);
+    esp_netif_str_to_ip4(cfg->netmask, &info.netmask);
+    if (cfg->gateway[0]) esp_netif_str_to_ip4(cfg->gateway, &info.gw);
+
+    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(s_netif));
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(s_netif, &info));
+
+    const char *dns = cfg->dns[0] ? cfg->dns : cfg->gateway;
+    if (dns[0]) {
+        esp_netif_dns_info_t d = { .ip.type = ESP_IPADDR_TYPE_V4 };
+        esp_netif_str_to_ip4(dns, &d.ip.u_addr.ip4);
+        esp_netif_set_dns_info(s_netif, ESP_NETIF_DNS_MAIN, &d);
+    }
+    ESP_LOGI(TAG, "Static IP %s", cfg->ip);
+}
+
+void network_start(const net_settings_t *cfg, network_ip_cb_t on_ip)
+{
+    s_on_ip = on_ip;
+
     esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
-    esp_netif_t *netif = esp_netif_new(&netif_cfg);
-    esp_netif_set_hostname(netif, NETWORK_HOSTNAME);
+    s_netif = esp_netif_new(&netif_cfg);
+    esp_netif_set_hostname(s_netif, cfg->hostname);
 
     eth_mac_config_t mac_cfg = ETH_MAC_DEFAULT_CONFIG();
     eth_esp32_emac_config_t emac_cfg = ETH_ESP32_EMAC_DEFAULT_CONFIG();
@@ -43,65 +95,50 @@ static void network_backend_start(void)
     esp_eth_phy_t *phy = esp_eth_phy_new_ip101(&phy_cfg);
 
     esp_eth_config_t eth_cfg = ETH_DEFAULT_CONFIG(mac, phy);
-    esp_eth_handle_t eth = NULL;
-    ESP_ERROR_CHECK(esp_eth_driver_install(&eth_cfg, &eth));
-    ESP_ERROR_CHECK(esp_netif_attach(netif, esp_eth_new_netif_glue(eth)));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_got_ip, NULL));
-    ESP_ERROR_CHECK(esp_eth_start(eth));
-    ESP_LOGI(TAG, "Ethernet started");
-}
+    ESP_ERROR_CHECK(esp_eth_driver_install(&eth_cfg, &s_eth));
+    esp_eth_ioctl(s_eth, ETH_CMD_G_MAC_ADDR, s_mac);
+    ESP_ERROR_CHECK(esp_netif_attach(s_netif, esp_eth_new_netif_glue(s_eth)));
 
-#else
-/* ------------------------------------------------------------------------ */
-/* Wi-Fi (native radio, or co-processor via esp_wifi_remote on ESP32-P4)    */
-/* ------------------------------------------------------------------------ */
-#include "soc/soc_caps.h"
-#if !SOC_WIFI_SUPPORTED && !__has_include("esp_wifi_remote.h")
-#error "NETWORK_MODE_WIFI on this chip needs esp_wifi_remote and esp_hosted - enable them in main/idf_component.yml"
-#endif
-#include "esp_wifi.h"
+    if (!cfg->dhcp) apply_static_ip(cfg);
 
-static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
-{
-    if (id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "Wi-Fi disconnected, reconnecting");
-        esp_wifi_connect();
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, on_eth_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_ip_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, on_ip_event, NULL));
+    ESP_ERROR_CHECK(esp_eth_start(s_eth));
+    ESP_LOGI(TAG, "Ethernet started, hostname %s", cfg->hostname);
+
+    /* <hostname>.local and service discovery for the web UI and stream */
+    if (mdns_init() == ESP_OK) {
+        mdns_hostname_set(cfg->hostname);
+        mdns_instance_name_set("Rumble Jungle");
+        mdns_service_add(NULL, "_http", "_tcp", WEB_PORT, NULL, 0);
+        mdns_txt_item_t txt[] = { { "path", STREAM_PATH } };
+        mdns_service_add("Rumble Jungle Stream", "_rumble-stream", "_tcp", STREAM_PORT, txt, 1);
     }
 }
 
-static void network_backend_start(void)
+void network_get_mac(uint8_t mac[6])
 {
-    if (strlen(WIFI_SSID) == 0) {
-        ESP_LOGE(TAG, "WIFI_SSID is empty - set it in config.h");
-        return;
-    }
-
-    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    esp_netif_set_hostname(netif, NETWORK_HOSTNAME);
-
-    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_wifi_event, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_got_ip, NULL));
-
-    wifi_config_t wifi_cfg = { 0 };
-    strlcpy((char *)wifi_cfg.sta.ssid, WIFI_SSID, sizeof(wifi_cfg.sta.ssid));
-    strlcpy((char *)wifi_cfg.sta.password, WIFI_PASSWORD, sizeof(wifi_cfg.sta.password));
-    wifi_cfg.sta.threshold.authmode =
-        strlen(WIFI_PASSWORD) ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_ps(WIFI_PS_NONE);  /* power saving causes stream dropouts */
-    ESP_LOGI(TAG, "Wi-Fi started, connecting to \"%s\"", WIFI_SSID);
+    memcpy(mac, s_mac, 6);
 }
-#endif
 
-void network_start(network_ip_cb_t on_ip)
+void network_get_info(network_info_t *out)
 {
-    s_on_ip = on_ip;
-    network_backend_start();
+    memset(out, 0, sizeof(*out));
+    out->link_up = s_link_up;
+    out->has_ip = s_has_ip;
+    out->speed_mbps = s_link_up ? s_speed : 0;
+    snprintf(out->mac, sizeof(out->mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+             s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5]);
+
+    const char *host = NULL;
+    if (s_netif && esp_netif_get_hostname(s_netif, &host) == ESP_OK && host) {
+        strlcpy(out->hostname, host, sizeof(out->hostname));
+    }
+    esp_netif_ip_info_t info;
+    if (s_has_ip && s_netif && esp_netif_get_ip_info(s_netif, &info) == ESP_OK) {
+        snprintf(out->ip, sizeof(out->ip), IPSTR, IP2STR(&info.ip));
+        snprintf(out->netmask, sizeof(out->netmask), IPSTR, IP2STR(&info.netmask));
+        snprintf(out->gateway, sizeof(out->gateway), IPSTR, IP2STR(&info.gw));
+    }
 }

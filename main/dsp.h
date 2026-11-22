@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 /*
  * Audio processing: rumble filter, parametric equalizer and output gain.
- * All parameters can be changed at runtime and are stored in NVS.
+ * Parameters come from the settings module and can change at runtime.
  */
 #pragma once
 #include <stdbool.h>
@@ -18,18 +18,18 @@ typedef struct {
     bool  auto_headroom;         /* lower the gain by the largest EQ boost */
 } dsp_params_t;
 
-/* Loads the saved parameters (or the defaults). Call after nvs_flash_init()
- * and before audio_start().                                                */
-void dsp_init(void);
+/* Default EQ band frequencies and Q values from config.h. */
+extern const float dsp_default_freq[EQ_BANDS];
+extern const float dsp_default_q[EQ_BANDS];
 
-void dsp_get_params(dsp_params_t *out);
+/* Highest usable filter frequency for the configured sample rate. */
+float dsp_max_freq(void);
 
-/* Applies new parameters (values are clamped to the configured ranges) and
- * schedules saving them to flash.                                          */
-void dsp_update(const dsp_params_t *params);
+/* Builds the initial filter chain. Call before audio_start(). */
+void dsp_init(const dsp_params_t *params);
 
-/* Resets all EQ bands to flat with default frequencies and Q. */
-void dsp_reset_eq(void);
+/* Switches to new parameters; the audio task cross-fades to them. */
+void dsp_configure(const dsp_params_t *params);
 
-/* Processes interleaved float samples in place (audio task only). */
+/* Processes interleaved stereo float samples in place (audio task only). */
 void dsp_process(float *buf, int frames);

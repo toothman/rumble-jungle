@@ -1,8 +1,4 @@
 dependencies:
-  idf: ">=5.4"
+  idf: ">=5.5"
   espressif/esp_audio_codec: "^2.3.0"
-
-  # Wi-Fi support for the ESP32-P4 (which has no radio of its own) through an
-  # ESP32-C6/C5 co-processor. Only needed with NETWORK_MODE_WIFI - uncomment both.
-  # espressif/esp_wifi_remote: "*"
-  # espressif/esp_hosted: "*"
+  espressif/mdns: "^1.8.0"

@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: MIT
 /*
- * Loads the user configuration (config.h) and validates it.
- * Source files include this header instead of config.h directly.
+ * Loads the build-time configuration (config.h), validates it and defines
+ * derived constants. Source files include this header instead of config.h.
  */
 #pragma once
 
-#define NETWORK_MODE_ETHERNET   1
-#define NETWORK_MODE_WIFI       2
-
 #include "config.h"
 
-#if !defined(NETWORK_MODE) || \
-    (NETWORK_MODE != NETWORK_MODE_ETHERNET && NETWORK_MODE != NETWORK_MODE_WIFI)
-#error "config.h: NETWORK_MODE must be NETWORK_MODE_ETHERNET or NETWORK_MODE_WIFI"
+#define NUM_INPUTS      2
+#define AUDIO_CHANNELS  2       /* PCM1808 is always stereo */
+
+#if AUDIO_SAMPLE_RATE != 44100 && AUDIO_SAMPLE_RATE != 48000
+#error "config.h: AUDIO_SAMPLE_RATE must be 44100 or 48000"
 #endif
 
-#if AUDIO_CHANNELS != 1 && AUDIO_CHANNELS != 2
-#error "config.h: AUDIO_CHANNELS must be 1 or 2"
-#endif
-
-#if STREAM_MAX_CLIENTS < 1
-#error "config.h: STREAM_MAX_CLIENTS must be at least 1"
+#if STREAM_MAX_CLIENTS < 1 || STREAM_MAX_CLIENTS > 8
+#error "config.h: STREAM_MAX_CLIENTS must be between 1 and 8"
 #endif
 
 #if EQ_BANDS < 2 || EQ_BANDS > 10
 #error "config.h: EQ_BANDS must be between 2 and 10"
+#endif
+
+#if STREAM_PREBUFFER_BYTES >= STREAM_CLIENT_FIFO
+#error "config.h: STREAM_PREBUFFER_BYTES must be smaller than STREAM_CLIENT_FIFO"
 #endif

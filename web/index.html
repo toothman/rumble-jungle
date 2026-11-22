@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#06110c">
+  <title>Rumble Jungle</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23101a15'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23b8f36b'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%2306110c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="pb-28 md:pb-10">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 border-b border-fern/40 bg-night/80 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
+      <div class="relative size-9 shrink-0">
+        <div id="logo-disc" class="vinyl size-9 rounded-full"></div>
+      </div>
+      <div class="min-w-0 flex-1">
+        <h1 class="truncate text-lg font-bold leading-tight">Rumble Jungle</h1>
+        <p id="hdr-sub" class="truncate text-xs text-mist">connecting…</p>
+      </div>
+      <span id="conn-dot" class="size-2.5 rounded-full bg-mist/40" title="Connection"></span>
+      <!-- Desktop tabs -->
+      <nav class="ml-4 hidden gap-1 md:flex" id="tabs-top" role="tablist"></nav>
+    </div>
+  </header>
+
+  <!-- Banners -->
+  <div class="mx-auto max-w-5xl px-4">
+    <div id="banner-offline" hidden class="mt-4 rounded-2xl border border-ember/40 bg-ember/10 px-4 py-3 text-sm text-ember">
+      Device not reachable — retrying…
+    </div>
+    <div id="banner-restart" hidden class="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-sun/40 bg-sun/10 px-4 py-3 text-sm text-sun">
+      <span class="flex-1">Network settings changed. They take effect after a restart.</span>
+      <button class="btn-ghost !py-1.5" data-action="restart">Restart now</button>
+    </div>
+    <div id="banner-fw" hidden class="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-sky/40 bg-sky/10 px-4 py-3 text-sm text-sky">
+      <span class="flex-1">New firmware is running.</span>
+      <button class="btn-ghost !py-1.5" onclick="location.reload()">Reload page</button>
+    </div>
+  </div>
+
+  <main class="mx-auto max-w-5xl px-4 pt-5">
+
+    <!-- ================================================================ LIVE -->
+    <section data-page="live" class="grid gap-4 md:grid-cols-5">
+
+      <div class="card relative overflow-hidden md:col-span-3">
+        <div class="flex items-center gap-5">
+          <div class="relative size-32 shrink-0 sm:size-40">
+            <div id="disc" class="vinyl size-full rounded-full"></div>
+            <div class="glare"></div>
+            <div id="disc-letter" class="absolute inset-0 grid place-items-center text-2xl font-black text-night/80">–</div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold uppercase tracking-widest text-mist">On air</p>
+            <p id="now-name" class="mt-1 truncate text-3xl font-black leading-tight sm:text-4xl">—</p>
+            <p id="now-sub" class="mt-1 text-sm text-mist">Waiting for audio</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span class="chip"><svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 0 1 16 0M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="12" r="1"/></svg><span id="chip-listeners">0 listeners</span></span>
+              <span id="chip-clip" hidden class="chip !border-ember/50 !bg-ember/15 !text-ember">Clipping — lower the gain</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-5">
+          <p class="label mb-2">Source</p>
+          <div class="seg" id="seg-source" data-key="source_mode"></div>
+        </div>
+      </div>
+
+      <div class="grid gap-4 md:col-span-2">
+        <div class="card" id="live-meters"></div>
+        <div class="card">
+          <div class="card-title">Stream</div>
+          <div class="mt-3 flex items-center gap-2">
+            <code id="stream-url" class="min-w-0 flex-1 truncate rounded-xl bg-night/60 px-3 py-2 font-mono text-xs text-lime">—</code>
+            <button class="btn-ghost !px-3" id="btn-copy" title="Copy URL">
+              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </button>
+          </div>
+          <p class="hint mt-3">Play this URL on Sonos (TuneIn custom station, Home Assistant
+            <code class="text-dew">media_player.play_media</code>) or in VLC.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ SOUND -->
+    <section data-page="sound" hidden class="grid gap-4 md:grid-cols-3">
+
+      <div class="card md:col-span-3">
+        <div class="flex items-center justify-between gap-3">
+          <div class="card-title">Equalizer</div>
+          <div class="flex items-center gap-3">
+            <button class="btn-ghost !py-1.5 !text-xs" data-action="eq-reset">Flat</button>
+            <label class="toggle"><input type="checkbox" data-key="eq"><span></span></label>
+          </div>
+        </div>
+        <svg id="eq-curve" class="mt-4 h-36 w-full overflow-visible" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
+        <div id="eq-bands" class="mt-2 grid gap-1" style="grid-template-columns: repeat(var(--bands), minmax(0, 1fr))"></div>
+        <div id="eq-detail" hidden class="mt-4 rounded-2xl border border-fern bg-night/40 p-4"></div>
+        <p class="hint mt-3">Tap a band's frequency to fine-tune frequency and width (Q).
+          The first band is a low shelf, the last a high shelf.</p>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between">
+          <div class="card-title">Rumble filter</div>
+          <label class="toggle"><input type="checkbox" data-key="rumble"><span></span></label>
+        </div>
+        <p class="hint mt-2">Steep high-pass that removes subsonic noise from warped records and tonearm movement.</p>
+        <div class="mt-4" data-slider="rumble_freq"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Output</div>
+        <div class="mt-4" data-slider="output_gain"></div>
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold">Auto headroom</p>
+            <p class="hint">Lowers the gain by the largest EQ boost.</p>
+          </div>
+          <label class="toggle"><input type="checkbox" data-key="auto_headroom"><span></span></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Limiter</div>
+        <div class="mt-4 flex items-center gap-3">
+          <span id="clip-led" class="size-4 rounded-full bg-fern transition"></span>
+          <p id="clip-text" class="text-sm">No clipping</p>
+        </div>
+        <p class="hint mt-3">Above −1 dBFS the signal is compressed smoothly instead of clipping hard.
+          If this lights up often, lower the output gain or the input trim.</p>
+      </div>
+    </section>
+
+    <!-- ================================================================ INPUTS -->
+    <section data-page="inputs" hidden class="grid gap-4 md:grid-cols-2">
+      <div id="input-cards" class="contents"></div>
+
+      <div class="card md:col-span-2">
+        <div class="card-title">Automatic switching</div>
+        <p class="hint mt-2">In <b class="text-dew">Auto</b> mode the input that is playing stays on air until it
+          goes silent. Then the other input takes over if it is playing. If both start together, the
+          priority input wins.</p>
+        <div class="mt-4 grid gap-5 md:grid-cols-2">
+          <div>
+            <p class="label mb-2">Priority input</p>
+            <div class="seg" id="seg-priority" data-key="priority"></div>
+          </div>
+          <div data-slider="xfade_ms"></div>
+          <div data-slider="signal_on_ms"></div>
+          <div data-slider="signal_off_ms"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ CONNECT -->
+    <section data-page="connect" hidden class="grid gap-4 md:grid-cols-2">
+
+      <form class="card" data-form="mqtt">
+        <div class="flex items-center justify-between gap-3">
+          <div class="card-title">MQTT · Home Assistant</div>
+          <label class="toggle"><input type="checkbox" name="mqtt_enabled"><span></span></label>
+        </div>
+        <div class="mt-3 flex items-center gap-2 text-sm">
+          <span id="mqtt-dot" class="size-2.5 rounded-full bg-mist/40"></span>
+          <span id="mqtt-state" class="text-mist">Disabled</span>
+        </div>
+        <div class="mt-4 grid gap-3">
+          <div class="field"><label class="label">Broker</label>
+            <input class="input" name="mqtt_uri" placeholder="mqtt://homeassistant.local:1883" autocomplete="off"></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="field"><label class="label">User</label>
+              <input class="input" name="mqtt_user" autocomplete="off"></div>
+            <div class="field"><label class="label">Password</label>
+              <input class="input" name="mqtt_password" type="password" autocomplete="new-password"></div>
+          </div>
+          <div class="field"><label class="label">Device name in Home Assistant</label>
+            <input class="input" name="device_name"></div>
+          <details class="group">
+            <summary class="cursor-pointer list-none text-xs font-semibold text-mist">
+              <span class="inline-block transition group-open:rotate-90">›</span> Topics
+            </summary>
+            <div class="mt-3 grid grid-cols-2 gap-3">
+              <div class="field"><label class="label">Base topic</label>
+                <input class="input" name="mqtt_base_topic"></div>
+              <div class="field"><label class="label">Discovery prefix</label>
+                <input class="input" name="mqtt_discovery_prefix"></div>
+            </div>
+          </details>
+        </div>
+        <div class="mt-5 flex justify-end">
+          <button class="btn-primary" type="submit">Save &amp; connect</button>
+        </div>
+      </form>
+
+      <form class="card" data-form="network">
+        <div class="card-title">Network</div>
+        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <dt class="text-mist">Link</dt><dd id="net-link">—</dd>
+          <dt class="text-mist">IP address</dt><dd id="net-ip" class="font-mono">—</dd>
+          <dt class="text-mist">Gateway</dt><dd id="net-gw" class="font-mono">—</dd>
+          <dt class="text-mist">MAC</dt><dd id="net-mac" class="font-mono text-xs leading-5">—</dd>
+        </dl>
+        <div class="mt-4 grid gap-3">
+          <div class="field"><label class="label">Hostname</label>
+            <input class="input" name="hostname"></div>
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-sm font-semibold">Automatic IP (DHCP)</span>
+            <span class="toggle"><input type="checkbox" name="dhcp"><span></span></span>
+          </label>
+          <div id="static-fields" class="grid grid-cols-2 gap-3">
+            <div class="field"><label class="label">IP address</label>
+              <input class="input" name="ip" inputmode="decimal" placeholder="192.168.1.50"></div>
+            <div class="field"><label class="label">Netmask</label>
+              <input class="input" name="netmask" inputmode="decimal" placeholder="255.255.255.0"></div>
+            <div class="field"><label class="label">Gateway</label>
+              <input class="input" name="gateway" inputmode="decimal" placeholder="192.168.1.1"></div>
+            <div class="field"><label class="label">DNS</label>
+              <input class="input" name="dns" inputmode="decimal" placeholder="gateway"></div>
+          </div>
+        </div>
+        <div class="mt-5 flex justify-end">
+          <button class="btn-primary" type="submit">Save &amp; restart</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ================================================================ SYSTEM -->
+    <section data-page="system" hidden class="grid gap-4 md:grid-cols-2">
+
+      <div class="card">
+        <div class="card-title">Stream</div>
+        <div class="mt-4 grid gap-3">
+          <div class="field"><label class="label">Bitrate</label>
+            <select class="input" data-key="bitrate"></select></div>
+          <div class="field"><label class="label">Station name</label>
+            <input class="input" data-key="stream_name"></div>
+        </div>
+        <p class="hint mt-3">Bitrate changes apply immediately; players keep playing.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Device</div>
+        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm" id="sys-info"></dl>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Firmware update</div>
+        <p class="hint mt-2">Upload <code class="text-dew">build/rumble_jungle.bin</code>. If the new firmware
+          does not start properly, the device rolls back automatically.</p>
+        <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-vine bg-night/40 p-4 hover:border-lime/60">
+          <svg class="size-6 text-lime" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16"/></svg>
+          <span id="ota-name" class="min-w-0 flex-1 truncate text-sm text-mist">Choose firmware file…</span>
+          <input type="file" id="ota-file" accept=".bin" class="sr-only">
+        </label>
+        <div id="ota-progress" hidden class="meter mt-3"><div class="meter-fill !transition-none" style="width:0"></div></div>
+        <div class="mt-4 flex justify-end">
+          <button class="btn-primary" id="btn-ota" disabled>Update</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Maintenance</div>
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button class="btn-ghost" data-action="restart">Restart</button>
+          <button class="btn-danger" data-action="factory-reset">Factory reset</button>
+        </div>
+        <p class="hint mt-3">Factory reset erases all settings, including MQTT and network.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile tab bar -->
+  <nav id="tabs-bottom" role="tablist"
+       class="fixed inset-x-3 bottom-3 z-30 flex gap-1 rounded-3xl border border-fern/60 bg-canopy/90 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden"
+       style="margin-bottom: env(safe-area-inset-bottom)"></nav>
+
+  <!-- Toast -->
+  <div id="toast" class="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4 md:bottom-8"></div>
+
+  <!-- Confirm dialog -->
+  <dialog id="dlg" class="m-auto w-[min(92vw,26rem)] rounded-3xl border border-fern bg-canopy p-0 text-dew backdrop:bg-black/60 backdrop:backdrop-blur-sm">
+    <form method="dialog" class="p-6">
+      <h2 id="dlg-title" class="text-lg font-bold"></h2>
+      <p id="dlg-text" class="mt-2 text-sm text-mist"></p>
+      <input id="dlg-input" hidden class="input mt-4" autocomplete="off">
+      <div class="mt-6 flex justify-end gap-3">
+        <button class="btn-ghost" value="cancel">Cancel</button>
+        <button class="btn-primary" id="dlg-ok" value="ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

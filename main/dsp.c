@@ -2,10 +2,6 @@
 #include <string.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "esp_log.h"
-#include "esp_timer.h"
-#include "nvs.h"
 #include "dsp_filters.h"
 #include "dsp.h"
 
@@ -14,33 +10,19 @@
  *   stage 2..   EQ bands: low shelf, peaking ..., high shelf              */
 #define RUMBLE_STAGES   2
 #define NUM_STAGES      (RUMBLE_STAGES + EQ_BANDS)
-#define NVS_NAMESPACE   "dsp"
-#define NVS_KEY         "params"
-#define NVS_VERSION     1
 
 typedef struct {
     biquad_coef_t stage[NUM_STAGES];
     float gain;                      /* linear output gain */
 } chain_t;
 
-typedef struct {
-    uint32_t version;
-    dsp_params_t params;
-} stored_params_t;
-
-static const char *TAG = "dsp";
-
-static const float k_default_freq[] = EQ_BAND_FREQS;
-static const float k_default_q[]    = EQ_BAND_QS;
-_Static_assert(sizeof(k_default_freq) / sizeof(k_default_freq[0]) == EQ_BANDS,
+_Static_assert(sizeof((float[])EQ_BAND_FREQS) / sizeof(float) == EQ_BANDS,
                "config.h: EQ_BAND_FREQS must have EQ_BANDS entries");
-_Static_assert(sizeof(k_default_q) / sizeof(k_default_q[0]) == EQ_BANDS,
+_Static_assert(sizeof((float[])EQ_BAND_QS) / sizeof(float) == EQ_BANDS,
                "config.h: EQ_BAND_QS must have EQ_BANDS entries");
 
-/* Parameters, shared between MQTT and the save timer */
-static dsp_params_t s_params;
-static SemaphoreHandle_t s_lock;
-static esp_timer_handle_t s_save_timer;
+const float dsp_default_freq[EQ_BANDS] = EQ_BAND_FREQS;
+const float dsp_default_q[EQ_BANDS]    = EQ_BAND_QS;
 
 /* Hand-over of new coefficients to the audio task */
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -54,42 +36,9 @@ static biquad_state_t s_next_state[AUDIO_CHANNELS][NUM_STAGES];
 
 /* ------------------------------------------------------------------------ */
 
-static float clampf(float v, float lo, float hi)
+float dsp_max_freq(void)
 {
-    if (isnan(v)) return lo;
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-
-static void clamp_params(dsp_params_t *p)
-{
-    const float max_freq = fminf(EQ_FREQ_MAX_HZ, AUDIO_SAMPLE_RATE * 0.45f);
-    for (int b = 0; b < EQ_BANDS; b++) {
-        p->band_gain[b] = clampf(p->band_gain[b], EQ_GAIN_MIN_DB, EQ_GAIN_MAX_DB);
-        p->band_freq[b] = clampf(p->band_freq[b], EQ_FREQ_MIN_HZ, max_freq);
-        p->band_q[b]    = clampf(p->band_q[b], EQ_Q_MIN, EQ_Q_MAX);
-    }
-    p->rumble_freq = clampf(p->rumble_freq, RUMBLE_FREQ_MIN_HZ, RUMBLE_FREQ_MAX_HZ);
-    p->output_gain = clampf(p->output_gain, OUTPUT_GAIN_MIN_DB, OUTPUT_GAIN_MAX_DB);
-}
-
-static void reset_bands(dsp_params_t *p)
-{
-    for (int b = 0; b < EQ_BANDS; b++) {
-        p->band_gain[b] = 0.0f;
-        p->band_freq[b] = k_default_freq[b];
-        p->band_q[b]    = k_default_q[b];
-    }
-}
-
-static void set_defaults(dsp_params_t *p)
-{
-    memset(p, 0, sizeof(*p));
-    p->eq_enabled     = EQ_ENABLED_DEFAULT;
-    reset_bands(p);
-    p->rumble_enabled = RUMBLE_FILTER_DEFAULT;
-    p->rumble_freq    = RUMBLE_FREQ_DEFAULT_HZ;
-    p->output_gain    = OUTPUT_GAIN_DEFAULT_DB;
-    p->auto_headroom  = AUTO_HEADROOM_DEFAULT;
+    return fminf(EQ_FREQ_MAX_HZ, AUDIO_SAMPLE_RATE * 0.45f);
 }
 
 static void build_chain(const dsp_params_t *p, chain_t *c)
@@ -135,91 +84,18 @@ static void hand_over(const dsp_params_t *p)
 }
 
 /* ------------------------------------------------------------------------ */
-/* Persistence                                                              */
-/* ------------------------------------------------------------------------ */
-
-static void save_timer_cb(void *arg)
-{
-    stored_params_t st = { .version = NVS_VERSION };
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    st.params = s_params;
-    xSemaphoreGive(s_lock);
-
-    nvs_handle_t h;
-    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return;
-    if (nvs_set_blob(h, NVS_KEY, &st, sizeof(st)) == ESP_OK) nvs_commit(h);
-    nvs_close(h);
-    ESP_LOGI(TAG, "Settings saved");
-}
-
-static void schedule_save(void)
-{
-    /* Debounced: dragging a slider in HA must not wear out the flash */
-    esp_timer_stop(s_save_timer);
-    esp_timer_start_once(s_save_timer, (uint64_t)DSP_SAVE_DELAY_MS * 1000);
-}
-
-static bool load_params(dsp_params_t *p)
-{
-    nvs_handle_t h;
-    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return false;
-    stored_params_t st;
-    size_t len = sizeof(st);
-    esp_err_t err = nvs_get_blob(h, NVS_KEY, &st, &len);
-    nvs_close(h);
-    /* Size check also catches a changed EQ_BANDS */
-    if (err != ESP_OK || len != sizeof(st) || st.version != NVS_VERSION) return false;
-    *p = st.params;
-    return true;
-}
-
-/* ------------------------------------------------------------------------ */
 /* Public API                                                               */
 /* ------------------------------------------------------------------------ */
 
-void dsp_init(void)
+void dsp_init(const dsp_params_t *params)
 {
-    s_lock = xSemaphoreCreateMutex();
-
-    if (load_params(&s_params)) {
-        ESP_LOGI(TAG, "Loaded saved settings");
-    } else {
-        set_defaults(&s_params);
-        ESP_LOGI(TAG, "Using default settings");
-    }
-    clamp_params(&s_params);   /* ranges in config.h may have changed */
-
-    build_chain(&s_params, &s_cur);
+    build_chain(params, &s_cur);
     memset(s_state, 0, sizeof(s_state));
-
-    const esp_timer_create_args_t args = { .callback = save_timer_cb, .name = "dsp_save" };
-    ESP_ERROR_CHECK(esp_timer_create(&args, &s_save_timer));
 }
 
-void dsp_get_params(dsp_params_t *out)
+void dsp_configure(const dsp_params_t *params)
 {
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    *out = s_params;
-    xSemaphoreGive(s_lock);
-}
-
-void dsp_update(const dsp_params_t *params)
-{
-    dsp_params_t p = *params;
-    clamp_params(&p);
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_params = p;
-    xSemaphoreGive(s_lock);
-    hand_over(&p);
-    schedule_save();
-}
-
-void dsp_reset_eq(void)
-{
-    dsp_params_t p;
-    dsp_get_params(&p);
-    reset_bands(&p);
-    dsp_update(&p);
+    hand_over(params);
 }
 
 void dsp_process(float *buf, int frames)

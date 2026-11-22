@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #include <stdbool.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/ringbuf.h"
+#include <stdint.h>
+#include "mixer.h"
 
-/* Starts I2S capture, audio processing and AAC encoding. */
+typedef struct {
+    mixer_status_t mix;
+    bool           clipping;       /* limiter engaged in the last 2 s */
+    uint32_t       bitrate;        /* bit/s currently encoded         */
+    bool           running;        /* audio frames are being produced */
+} audio_status_t;
+
+/* Starts I2S capture of both inputs, processing and AAC encoding. Encoded
+ * frames are handed to the stream server. Call after settings_init().     */
 void audio_start(void);
 
-/* Ring buffer carrying encoded ADTS-AAC frames (one item per frame). */
-RingbufHandle_t audio_get_output(void);
-
-/* Input peak level of the last ~0.25 s in dBFS (before processing). */
-float audio_get_level_dbfs(void);
-
-/* True if the output limiter engaged since the last call. */
-bool audio_take_clip_flag(void);
+void audio_get_status(audio_status_t *out);

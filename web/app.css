@@ -1,0 +1,190 @@
+@import "tailwindcss";
+@source "./index.html";
+@source "./app.js";
+
+@theme {
+  --font-sans: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-night: #06110c;
+  --color-canopy: #0c1f17;
+  --color-moss: #12301f;
+  --color-fern: #1c4430;
+  --color-vine: #2d6a4a;
+  --color-mist: #8fb3a0;
+  --color-dew: #e8f6ee;
+  --color-lime: #b8f36b;
+  --color-sun: #ffc35c;
+  --color-ember: #ff6b5b;
+  --color-orchid: #c79bff;
+  --color-sky: #6ad4ff;
+
+  --animate-spin-slow: spin 2.4s linear infinite;
+  --animate-pop: pop 0.25s ease-out;
+}
+
+@keyframes pop {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold
+         transition active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+}
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-night text-dew font-sans antialiased min-h-dvh;
+    background-image:
+      radial-gradient(60rem 30rem at 110% -10%, rgb(184 243 107 / 0.08), transparent 60%),
+      radial-gradient(50rem 30rem at -20% 110%, rgb(106 212 255 / 0.06), transparent 60%);
+    background-attachment: fixed;
+  }
+  input, select, button { font: inherit; }
+}
+
+@layer components {
+  .card {
+    @apply rounded-3xl border border-fern/60 bg-canopy/80 p-5 shadow-xl shadow-black/30 backdrop-blur;
+  }
+  .card-title {
+    @apply flex items-center gap-2 text-sm font-semibold tracking-wide text-mist uppercase;
+  }
+  .hint { @apply text-xs leading-relaxed text-mist/80; }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-fern bg-moss/70 px-3 py-1 text-xs font-medium text-mist;
+  }
+
+  .btn-primary { @apply btn bg-lime text-night hover:brightness-110; }
+  .btn-ghost   { @apply btn border border-fern bg-moss/60 text-dew hover:bg-fern/60; }
+  .btn-danger  { @apply btn border border-ember/50 bg-ember/10 text-ember hover:bg-ember/20; }
+
+  .field { @apply flex flex-col gap-1.5; }
+  .label { @apply text-xs font-medium text-mist; }
+  .input {
+    @apply w-full rounded-2xl border border-fern bg-night/60 px-4 py-2.5 text-sm text-dew
+           placeholder:text-mist/50 outline-none transition
+           focus:border-lime/70 focus:ring-4 focus:ring-lime/10 disabled:opacity-40;
+  }
+
+  /* Toggle switch: <label class="toggle"><input type="checkbox"><span></span></label> */
+  .toggle { @apply relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center; }
+  .toggle input { @apply sr-only; }
+  .toggle span { @apply absolute inset-0 rounded-full bg-fern transition; }
+  .toggle input:checked + span { @apply bg-lime; }
+  .toggle input:focus-visible + span { @apply ring-4 ring-lime/20; }
+  .toggle span::after {
+    content: "";
+    @apply absolute top-1 left-1 size-5 rounded-full bg-dew shadow transition;
+  }
+  .toggle input:checked + span::after { @apply translate-x-5 bg-night; }
+
+  /* Segmented control, buttons get aria-pressed */
+  .seg { @apply grid auto-cols-fr grid-flow-col gap-1 rounded-2xl border border-fern bg-night/60 p-1; }
+  .seg button {
+    @apply truncate rounded-xl px-2 py-2.5 text-sm font-semibold text-mist transition;
+  }
+  .seg button[aria-pressed="true"] { @apply bg-lime text-night shadow-lg shadow-lime/20; }
+
+  /* Tabs */
+  .tab {
+    @apply flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-semibold text-mist transition
+           md:flex-row md:gap-2 md:px-4 md:text-sm;
+  }
+  .tab[aria-selected="true"] { @apply bg-moss text-lime; }
+  .tab svg { @apply size-6 md:size-5; }
+
+  .meter { @apply relative h-3 overflow-hidden rounded-full bg-night/80; }
+  .meter-fill {
+    @apply absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out;
+    background: linear-gradient(90deg, var(--color-vine), var(--color-lime) 70%, var(--color-sun) 88%, var(--color-ember));
+    background-size: var(--meter-w, 100%) 100%;
+  }
+  .meter-mark { @apply absolute inset-y-[-3px] w-0.5 rounded bg-dew/80; }
+}
+
+/* Range sliders */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  width: 100%;
+  height: 2rem;
+  cursor: pointer;
+  --pct: 50%;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-lime) var(--pct), var(--color-fern) var(--pct));
+}
+input[type="range"]::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-lime) var(--pct), var(--color-fern) var(--pct));
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--color-dew);
+  border: 4px solid var(--color-night);
+  box-shadow: 0 0 0 2px var(--color-lime), 0 4px 12px rgb(0 0 0 / 0.4);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--color-dew);
+  border: 4px solid var(--color-night);
+  box-shadow: 0 0 0 2px var(--color-lime);
+}
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgb(184 243 107 / 0.3); }
+
+/* Vertical EQ sliders, centred fill (gain 0 dB in the middle) */
+input[type="range"].v {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 2.25rem;
+  height: 11rem;
+}
+input[type="range"].v::-webkit-slider-runnable-track {
+  width: 0.5rem;
+  height: 100%;
+  background: linear-gradient(0deg, var(--color-fern) var(--lo), var(--color-lime) var(--lo),
+                              var(--color-lime) var(--hi), var(--color-fern) var(--hi));
+}
+input[type="range"].v::-moz-range-track {
+  width: 0.5rem;
+  height: 100%;
+  background: linear-gradient(0deg, var(--color-fern) var(--lo), var(--color-lime) var(--lo),
+                              var(--color-lime) var(--hi), var(--color-fern) var(--hi));
+}
+input[type="range"].v::-webkit-slider-thumb { margin-top: 0; margin-left: -0.5rem; }
+
+/* The record */
+.vinyl {
+  background:
+    radial-gradient(circle, var(--color-night) 0 5%, transparent 5.5%),
+    radial-gradient(circle, var(--disc-label, var(--color-lime)) 0 30%, transparent 30.5%),
+    repeating-radial-gradient(circle, #101a15 0 2px, #17241d 2px 4px),
+    #101a15;
+  box-shadow: inset 0 0 0 2px #22332a, 0 20px 50px -10px rgb(0 0 0 / 0.7);
+}
+.glare {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  background: conic-gradient(from 30deg, transparent 0 10%, rgb(255 255 255 / 0.07) 14%, transparent 20% 60%,
+                             rgb(255 255 255 / 0.05) 64%, transparent 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin-slow { animation: none; }
+}

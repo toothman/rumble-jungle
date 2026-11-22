@@ -1,4 +1,5 @@
-# Builds the firmware on every push and pull request.
+# Builds the firmware on every push and pull request and checks that the
+# committed web UI assets match the sources in web/.
 name: Build
 
 on:
@@ -6,20 +7,41 @@ on:
   pull_request:
 
 jobs:
-  build:
+  web:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        idf_version: [v5.4, v5.5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build web UI and compare with the committed assets
+        run: |
+          mkdir -p /tmp/committed && cp main/www/*.gz /tmp/committed/
+          ./tools/build_web.sh
+          # Compare uncompressed content (gzip output differs between platforms)
+          for f in main/www/*.gz; do
+            if ! cmp -s <(gunzip -c "$f") <(gunzip -c "/tmp/committed/$(basename "$f")"); then
+              echo "::error::$f is out of date - run tools/build_web.sh and commit the result"
+              exit 1
+            fi
+          done
+
+  firmware:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use example configuration
-        run: cp main/config.example.h main/config.h
-
-      - name: Build with ESP-IDF ${{ matrix.idf_version }}
+      - name: Build with ESP-IDF v5.5
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: ${{ matrix.idf_version }}
+          esp_idf_version: v5.5
           target: esp32p4
           path: .
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: rumble-jungle-firmware
+          path: |
+            build/rumble_jungle.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/ota_data_initial.bin
+            build/flasher_args.json
