@@ -15,3 +15,7 @@ web/.build/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Python (hardware/ generators)
+__pycache__/
+.venv/
