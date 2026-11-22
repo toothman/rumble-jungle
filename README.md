@@ -166,9 +166,10 @@ There is nothing to configure before building: all user settings live in flash a
 in the web UI. Pins and structural constants (number of EQ bands, sample rate) are in
 `main/config.h`.
 
-Some early ESP32-P4 boards have chip revision < 3. If the firmware does not boot, enable support
-for older revisions in `idf.py menuconfig` (`Component config -> Hardware Settings -> Chip
-revision`). The revision is shown in the boot log.
+The firmware targets ESP32-P4 chip revision 3.0 or newer (current Waveshare boards ship with
+v3.x; the revision is shown in the boot log and by `esptool.py chip_id`). Early boards with
+revision < 3 need `esp_audio_codec` < 2.6 in `main/idf_component.yml` and the option
+`ESP32P4_SELECTS_REV_LESS_V3` in `sdkconfig.defaults`.
 
 ## First start
 
