@@ -31,10 +31,10 @@ NETS = {
     "5VF":  ("#f0803c", "5 V filtered, ADC analog supply"),
     "3V3":  ("#e8b90c", "3.3 V, ADC digital supply"),
     "MCLK": ("#2f80ed", "MCLK  GPIO20 -> SCK"),
-    "BCK":  ("#9b51e0", "BCK  GPIO21 -> BCK"),
+    "BCK":  ("#9b51e0", "BCK  GPIO26 -> BCK"),
     "LRCK": ("#27ae60", "LRCK  GPIO22 -> LRC"),
     "DA":   ("#00a3a3", "DATA A  OUT (ADC A) -> GPIO23"),
-    "DB":   ("#e0569b", "DATA B  OUT (ADC B) -> GPIO26"),
+    "DB":   ("#e0569b", "DATA B  OUT (ADC B) -> GPIO47"),
 }
 
 # --------------------------------------------------------------------------
@@ -55,109 +55,100 @@ def esp_pin(name, row="top"):
     return (r, L.ESP_COL + pins.index(name))
 
 
-# CJMCU-1808 module, 35 x 27 mm. Pin positions relative to the module's
-# top-left corner as seen from above, back header on top, in pitch units
-# from the first back-row pin (which lands on a perfboard hole).
-ADC_W, ADC_H = 35.0, 27.0
-ADC_FIRST = (2.1, 2.9)                       # first back-row pin from the corner, mm
-ADC_BACK = ["OUT", "BCK", "LRC", "SCK", "GND", "3.3V"]          # (row 0, cols 0..5)
-ADC_FRONT = ["FMY", "MD1", "MD0", "GND", "3.3", "+5V"]          # (row 9, cols 4..9)
-ADC_FRONT_COL0, ADC_ROWS = 4, 9
-ADC_ANALOG = ["LIN", "-", "RIN"]                                 # on the left edge, wired by hand
+# CJMCU-1808 module (measured): 33.5 x 27 mm, mounting holes 29 x 22 mm.
+# It lies with its long side horizontal, turned so that the signal header
+# is at the bottom (towards the ESP32) and the analog inputs point right.
+# Both headers sit on the 2.54 mm grid, 10 pitches apart, in the same
+# columns. Positions in mm from the module's top-left corner.
+ADC_W, ADC_H = 33.5, 27.0
+ADC_HOLES = (29.0, 22.0)
+ADC_PIN0 = (11.6, 0.9)                       # first control pin (+5V)
+ADC_SIGNAL = ["3.3V", "GND", "SCK", "LRC", "OUT", "BCK"]   # bottom row, left to right
+ADC_CONTROL = ["+5V", "3.3", "GND", "MD0", "MD1", "FMY"]   # top row, left to right
+ADC_ROWS = 10
+ADC_ANALOG = [("RIN", 32.6, 10.9), ("-", 32.6, 13.4), ("LIN", 32.6, 16.0)]
 
 
 class Adc:
-    """An ADC module placed with its first back-row pin at (row, col),
-    optionally turned by 180 degrees."""
+    """An ADC module whose signal header starts at (row, col)."""
 
-    def __init__(self, ref, name, row, col, turned=False):
-        self.ref, self.name, self.row, self.col, self.turned = ref, name, row, col, turned
+    def __init__(self, ref, name, row, col):
+        self.ref, self.name, self.row, self.col = ref, name, row, col
 
-    def pin(self, label, front=None):
-        if front is None:
-            front = label in ADC_FRONT and label not in ADC_BACK
-        if front:
-            dr, dc = ADC_ROWS, ADC_FRONT_COL0 + ADC_FRONT.index(label)
-        else:
-            dr, dc = 0, ADC_BACK.index(label)
-        if self.turned:
-            dr, dc = -dr, -dc
-        return (self.row + dr, self.col + dc)
+    def pin(self, label, control=False):
+        if control:
+            return (self.row - ADC_ROWS, self.col + ADC_CONTROL.index(label))
+        return (self.row, self.col + ADC_SIGNAL.index(label))
 
     def pins(self):
-        out = [(self.pin(p, False), p) for p in ADC_BACK]
-        out += [(self.pin(p, True), p) for p in ADC_FRONT]
-        return out
-
-    def analog_pins(self):
-        """LIN, -, RIN in mm (board coordinates). Off the grid: the RCA
-        leads are soldered straight to the module."""
-        x, y, w, h = self.outline()
-        out = []
-        for i, label in enumerate(ADC_ANALOG):
-            ax, ay = 2.3, 12.0 + i * P
-            if self.turned:
-                ax, ay = w - ax, h - ay
-            out.append((x + ax, y + ay, label))
-        return out
+        return ([(self.pin(p), p, True) for p in ADC_SIGNAL] +
+                [(self.pin(p, True), p, False) for p in ADC_CONTROL])
 
     def outline(self):
-        x, y = L.hx(self.col), L.hy(self.row)
-        fx, fy = ADC_FIRST
-        if self.turned:
-            return (x + fx - ADC_W, y + fy - ADC_H, ADC_W, ADC_H)
-        return (x - fx, y - fy, ADC_W, ADC_H)
+        x = L.hx(self.col) - ADC_PIN0[0]
+        y = L.hy(self.row - ADC_ROWS) - ADC_PIN0[1]
+        return (x, y, ADC_W, ADC_H)
+
+    def analog_pins(self):
+        """RIN, -, LIN in mm (board coordinates). Not on the grid: the RCA
+        leads are soldered straight to the module."""
+        x, y, _, _ = self.outline()
+        return [(x + ax, y + ay, label) for label, ax, ay in ADC_ANALOG]
 
 
 # --------------------------------------------------------------------------
-# Layout (filled in below)
+# Layout
 # --------------------------------------------------------------------------
 ADCS = []
 COMPONENTS = []     # (ref, kind, value, (r, c), (r, c))
 WIRES = []          # (net, [(r, c), ...])
 BRIDGES = []        # [(r, c), ...] bare tinned wire / solder bridge
-OFFBOARD = []       # (label, (r, c)) flying leads
 
 
 def build_layout():
-    # Both modules are turned by 180 degrees: their signal header faces the
-    # ESP32 and the analog inputs point to the free right half of the board.
-    # Every connection from A to B then runs straight up.
-    a = Adc("ADC A", "Aux 1", 20, 11, turned=True)
-    b = Adc("ADC B", "Aux 2", 9, 11, turned=True)
+    # ADC A sits right above the ESP32 with its signal header lined up with
+    # the ESP32 pins. ADC B sits above A, shifted right by six columns, so
+    # its wires pass beside A's control header. All wires run on the solder
+    # side and none of them cross.
+    a = Adc("ADC A", "Aux 1", 21, 7)
+    b = Adc("ADC B", "Aux 2", 10, 13)
     ADCS.extend([a, b])
 
     e = esp_pin
-    # Supply: VSYS -> L1 -> C1 under the ESP32, filtered 5 V up the left side
     COMPONENTS.extend([
         ("L1", "L", "10µH", (25, 3), (25, 7)),
         ("C1", "C", "100µF", (27, 3), (28, 3)),
-        ("R1", "R", "33Ω", (23, 7), (22, 7)),
-        ("R2", "R", "33Ω", (23, 8), (22, 8)),
+        ("R1", "R", "33Ω", (22, 9), (23, 9)),
+        ("R2", "R", "33Ω", (22, 13), (23, 13)),
     ])
     WIRES.extend([
+        # Supply: VSYS -> L1 -> C1 under the ESP32, filtered 5 V up the left
         ("5V", [e("VSYS"), (25, 3)]),
-        ("5VF", [(25, 7), (27, 7), (27, 1), (11, 1), a.pin("+5V")]),
-        ("5VF", [a.pin("+5V"), b.pin("+5V")]),
+        ("5VF", [(25, 7), (27, 7), (27, 1), (12, 1), (12, 7), a.pin("+5V", True)]),
         ("GND", [(28, 3), (28, 4), e("GND", "bot")]),
-        ("GND", [e("GND"), a.pin("GND", front=True)]),
-        ("GND", [a.pin("GND", front=True), b.pin("GND", front=True)]),
-        ("3V3", [e("3V3"), a.pin("3.3V")]),
-        ("3V3", [a.pin("3.3"), b.pin("3.3")]),
-        ("MCLK", [e("20"), (23, 7)]),
-        ("MCLK", [(22, 7), (21, 7), (21, 8), a.pin("SCK")]),
-        ("MCLK", [a.pin("SCK"), b.pin("SCK")]),
-        ("BCK", [e("21"), (23, 8)]),
-        ("BCK", [(22, 8), (22, 10), a.pin("BCK")]),
-        ("BCK", [a.pin("BCK"), b.pin("BCK")]),
-        ("LRCK", [e("22"), (23, 10), (23, 9), a.pin("LRC")]),
-        ("LRCK", [a.pin("LRC"), b.pin("LRC")]),
+        ("GND", [e("GND"), (13, 4), (13, 9), a.pin("GND", True)]),
+        ("3V3", [a.pin("3.3V"), (22, 7), (22, 6), e("3V3")]),
+        # ESP32 -> ADC A
+        ("MCLK", [a.pin("SCK"), (22, 9)]),
+        ("MCLK", [(23, 9), (23, 7), e("20")]),
+        ("LRCK", [a.pin("LRC"), e("22")]),
         ("DA", [a.pin("OUT"), e("23")]),
-        ("DB", [b.pin("OUT"), (9, 13), e("26")]),
+        ("BCK", [a.pin("BCK"), (22, 12), (22, 13)]),
+        ("BCK", [(23, 13), e("26")]),
+        # ADC A -> ADC B: clocks (staircase, the rightmost wire turns first)
+        ("MCLK", [a.pin("SCK"), (14, 9), (14, 15), b.pin("SCK")]),
+        ("LRCK", [a.pin("LRC"), (16, 10), (16, 16), b.pin("LRC")]),
+        ("BCK", [a.pin("BCK"), (18, 12), (18, 18), b.pin("BCK")]),
+        # ADC A -> ADC B: supply, from A's control header to B's
+        ("5VF", [a.pin("+5V", True), (7, 7), (7, 13), b.pin("+5V", True)]),
+        ("3V3", [a.pin("3.3", True), (8, 8), (8, 14), b.pin("3.3", True)]),
+        ("GND", [a.pin("GND", True), (9, 9), (9, 15), b.pin("GND", True)]),
+        # ADC B -> ESP32
+        ("DB", [b.pin("OUT"), (9, 17), (9, 20), e("47")]),
     ])
-    # Mode pins FMY, MD1, MD0 to ground: I2S format, slave mode
+    # Mode pins MD0, MD1, FMY to ground: slave mode, I2S format
     for m in (a, b):
-        BRIDGES.append([m.pin("GND", front=True), m.pin("FMY")])
+        BRIDGES.append([m.pin("GND", True), m.pin("FMY", True)])
 
 
 # --------------------------------------------------------------------------
@@ -200,7 +191,7 @@ def draw_board(svg, solder_side):
                 f'stroke="#b5935a"/>')
     used = set()
     for a in ADCS:
-        used |= {rc for rc, _ in a.pins()}
+        used |= {rc for rc, _, _ in a.pins()}
     used |= {esp_pin(n) for n in ESP_PINS_TOP} | {esp_pin(n, "bot") for n in ESP_PINS_BOT}
     for comp in COMPONENTS:
         used |= {comp[3], comp[4]}
@@ -311,7 +302,7 @@ def draw_components_side(svg):
     for row, names in (("top", ESP_PINS_TOP), ("bot", ESP_PINS_BOT)):
         for i, n in enumerate(names):
             x, y = pos(esp_pin(n, row))
-            used = n in ("VSYS", "GND", "3V3", "20", "21", "22", "23", "26")
+            used = n in ("VSYS", "GND", "3V3", "20", "22", "23", "26", "47")
             svg.add(f'<rect x="{px(x - 1.0)}" y="{px(y - 1.0)}" width="{px(2.0)}" '
                     f'height="{px(2.0)}" fill="{"#f5c84c" if used else "#8a96a3"}"/>')
             pin_label(svg, x, y, n, row == "top", "#e8f6ee" if used else "#9aa5b1")
@@ -341,17 +332,17 @@ def draw_components_side(svg):
         x, y, w, h = a.outline()
         svg.add(f'<rect x="{px(x)}" y="{px(y)}" width="{px(w)}" height="{px(h)}" rx="4" '
                 f'fill="#5b2a86" fill-opacity="0.80" stroke="#3b1659" stroke-width="1.5"/>')
-        for hx_, hy_ in ((2.6, 2.6), (w - 2.6, 2.6), (2.6, h - 2.6), (w - 2.6, h - 2.6)):
+        mx, my = (ADC_W - ADC_HOLES[0]) / 2, (ADC_H - ADC_HOLES[1]) / 2
+        for hx_, hy_ in ((mx, my), (w - mx, my), (mx, h - my), (w - mx, h - my)):
             svg.add(f'<circle cx="{px(x + hx_)}" cy="{px(y + hy_)}" r="{px(1.5)}" '
                     f'fill="#e3c98f" stroke="#3b1659"/>')
         svg.text(x + w / 2, y + h / 2 - 1, a.ref, 18, weight="bold", fill="#f3e8ff")
         svg.text(x + w / 2, y + h / 2 + 3.6, a.name, 13, fill="#e9d5ff")
-        for rc, label in a.pins():
+        for rc, label, signal in a.pins():
             px_, py_ = pos(rc)
             svg.add(f'<rect x="{px(px_ - 1.0)}" y="{px(py_ - 1.0)}" width="{px(2.0)}" '
                     f'height="{px(2.0)}" fill="#f5c84c"/>')
-            back = label in ADC_BACK and rc == a.pin(label, False)
-            pin_label(svg, px_, py_, label, back != a.turned, "#ffffff")
+            pin_label(svg, px_, py_, label, not signal, "#ffffff")
         for ax, ay, label in a.analog_pins():
             svg.add(f'<circle cx="{px(ax)}" cy="{px(ay)}" r="{px(0.9)}" fill="#e5e7eb" '
                     f'stroke="#9ca3af"/>')
@@ -367,13 +358,13 @@ def draw_components_side(svg):
 
 NOTES = [
     "ESP32: plug it into two 1 x 20 female headers (pins 40..21 towards the ADCs).",
-    "ADCs: solder both 6-pin headers into the board, modules turned by 180° as drawn.",
-    "FMY, MD1, MD0 bridged to GND: I2S format, slave mode.",
-    "3.3 V enters each module on its signal header; the second 3.3 pin passes it on.",
+    "ADCs: solder both 6-pin headers into the board, analog inputs to the right.",
+    "MD0, MD1, FMY bridged to GND: slave mode, I2S format.",
+    "Each module passes 3.3 V from its 3.3V pin to its 3.3 pin (check with a meter).",
     "R1, R2: 1206 SMD across two pads on the solder side (or a wire bridge).",
     "L1, C1 sit under the ESP32: lay them flat (max. 8 mm high).",
-    "Audio: shielded cable from LIN, –, RIN to the RCA jacks; shield to – only.",
-    "Check the pin labels of your ADC modules before soldering.",
+    "Audio: shielded cable from RIN, –, LIN to the RCA jacks; shield to – only.",
+    "Needs firmware 1.1 or newer (BCK on GPIO26, DATA B on GPIO47).",
 ]
 
 

@@ -29,16 +29,17 @@
  * same pins, so both inputs are sample-synchronous. See README "Wiring".
  *
  * All five pins are on the right-hand row of the Waveshare header (pins 35,
- * 34, 32, 31, 29). Other free header GPIOs: 2-6, 14-19, 27, 32, 33, 46-48,
- * 54. Avoid Ethernet (28-31, 34, 35, 49-52), I2C (7, 8), the on-board codec
+ * 32, 31, 29, 22), in the order the perfboard layout (docs/perfboard.svg)
+ * needs. Other free header GPIOs: 2-6, 14-19, 21, 27, 32, 33, 46, 48, 54.
+ * Avoid Ethernet (28-31, 34, 35, 49-52), I2C (7, 8), the on-board codec
  * (9-13, 53), USB (24, 25), SD card (39-44) and strapping pins (34-38).
  * ========================================================================== */
 
 #define PIN_I2S_MCLK            20      /* -> SCK of both ADCs              */
-#define PIN_I2S_BCLK            21      /* -> BCK of both ADCs              */
+#define PIN_I2S_BCLK            26      /* -> BCK of both ADCs              */
 #define PIN_I2S_WS              22      /* -> LRC of both ADCs              */
 #define PIN_I2S_DIN_A           23      /* <- OUT of ADC A                  */
-#define PIN_I2S_DIN_B           26      /* <- OUT of ADC B                  */
+#define PIN_I2S_DIN_B           47      /* <- OUT of ADC B                  */
 
 /* Pins the slave controller (input B) reads its clocks from. Normally the
  * same pins as above (internal loopback, no extra wires). If input B stays
