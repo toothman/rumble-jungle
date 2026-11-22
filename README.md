@@ -154,7 +154,7 @@ unconnected. Some modules label the 3.3 V pin *VDD* and the 5 V pin *VCC*.
 
 ## Build and flash
 
-Requires **ESP-IDF 5.5**.
+Requires **ESP-IDF 5.5.2 or newer** (5.5.0 and 5.5.1 do not support ESP32-P4 chip revision 3).
 
 ```sh
 idf.py set-target esp32p4
